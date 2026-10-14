@@ -39,7 +39,7 @@ npm run start:dev --prefix backend
 npm run dev
 ```
 
-The Next.js app is available at [http://localhost:3000](http://localhost:3000). The NestJS API listens on port 4000 by default. Next.js proxies browser auth requests through `/api/auth/*` so the browser and session cookie remain same-origin. Set `FRONTEND_ORIGIN` to the exact deployed frontend origin.
+The Next.js app is available at [http://localhost:3000](http://localhost:3000). The NestJS API listens on port 4000 by default. Next.js proxies browser requests through `/api/auth/*` and `/api/workspaces/*` so the browser and session cookie remain same-origin. Set `FRONTEND_ORIGIN` to the exact deployed frontend origin.
 
 ## Authentication
 
@@ -51,7 +51,14 @@ The Next.js app is available at [http://localhost:3000](http://localhost:3000). 
 - Login attempts are limited to five per minute per client IP. Configure `TRUST_PROXY_HOPS` to match the trusted reverse-proxy chain (default: one Next.js proxy); keep the API private behind that proxy so clients cannot forge forwarding headers. The in-memory throttler store is suitable for a single API instance; multi-instance deployments should configure a shared throttler store.
 - API errors use a consistent JSON response shape. Validation is enforced by NestJS in addition to browser-side form checks.
 
-Workspace membership and project/task persistence are not implemented. The dashboard tasks remain client-side demo state.
+## Workspaces
+
+- Authenticated users can create, list, rename, and delete workspaces. The creator becomes an `OWNER`.
+- `OWNER`, `ADMIN`, and `MEMBER` permissions are enforced by the API. Only owners can change roles or delete workspaces; owners and admins can rename workspaces, while admins can invite or remove members but cannot manage admins or owners.
+- Owners and admins can create in-app invitations for normalized email addresses. Invitation links contain a random one-time token; only its SHA-256 digest is stored. Links expire after seven days and can only be accepted by an account with the invited email.
+- Invitations are not emailed. Copy and share the generated invitation link directly; no email provider is configured.
+- The workspace UI is available from the dashboard selector and each workspace's Members link. Workspaces and memberships are persisted in PostgreSQL; project/task state remains client-side demo data.
+- Apply new schema migrations with `npm run prisma:migrate --prefix backend`.
 
 ## Checks
 
@@ -63,4 +70,4 @@ npm test --prefix backend
 npm run build --prefix backend
 ```
 
-The backend authentication tests exercise account creation, duplicate normalized emails, password failures, login, protected routes, logout/session expiry, CSRF origin checks, and login rate limiting. They use an isolated Prisma test double; running the actual service still requires PostgreSQL.
+The backend tests exercise account creation, duplicate normalized emails, password failures, login, protected routes, logout/session expiry, CSRF origin checks, login rate limiting, workspace isolation, role permissions, invitation expiry and acceptance, duplicate membership, and last-owner protection. They use isolated Prisma test doubles; running the actual service still requires PostgreSQL.

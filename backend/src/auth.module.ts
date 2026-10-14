@@ -17,5 +17,6 @@ import { PrismaService } from "./prisma.service";
     PrismaService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
+  exports: [AuthGuard, AuthService, PrismaService],
 })
 export class AuthModule {}

@@ -8,13 +8,14 @@ import { ArrowRight, CheckCircle2, Command, LoaderCircle, LockKeyhole, Mail, Use
 interface AuthFormProps {
   mode: "login" | "register";
   sessionExpired?: boolean;
+  redirectTo?: string;
 }
 
 interface ApiError {
   message?: string | string[];
 }
 
-export default function AuthForm({ mode, sessionExpired = false }: AuthFormProps) {
+export default function AuthForm({ mode, sessionExpired = false, redirectTo }: AuthFormProps) {
   const router = useRouter();
   const isRegister = mode === "register";
   const [name, setName] = useState("");
@@ -52,7 +53,7 @@ export default function AuthForm({ mode, sessionExpired = false }: AuthFormProps
       }
 
       setSuccess(true);
-      router.replace("/dashboard");
+      router.replace(redirectTo ?? "/dashboard");
       router.refresh();
     } catch {
       setError("We couldn't reach the server. Check your connection and try again.");
