@@ -1,82 +1,66 @@
 # TeamFlow Project Manager
 
-A modern project management starter built with **Next.js, React, TypeScript, and Tailwind CSS**. It includes a responsive project dashboard, Kanban board, task search and priority filtering, task creation, and drag-and-drop task movement.
+A project dashboard built with Next.js, backed by a NestJS authentication API and PostgreSQL persistence through Prisma.
 
-## Features
-
-- Responsive workspace dashboard
-- Four Kanban columns: To do, In progress, In review, and Done
-- Drag and drop tasks between columns
-- Create tasks with priority, assignee, and status
-- Search tasks by title, description, ID, or label
-- Filter tasks by priority
-- Summary cards and completion progress
-- Reusable typed task model and seed data
-
-## Tech stack
-
-- Next.js App Router
-- React
-- TypeScript
-- Tailwind CSS
-- Lucide icons
-
-## Getting started
-
-### Requirements
+## Requirements
 
 - Node.js 20.9 or newer
 - npm
+- PostgreSQL 14 or newer
 
-### Install and run
+## Configure the API and database
+
+Copy `backend/.env.example` to `backend/.env`, then set `DATABASE_URL` to a PostgreSQL database you control. Copy the `AUTH_API_URL` setting from `.env.example` to the root `.env.local` if the API is not running at its default local URL.
+
+```text
+backend/.env:
+DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DATABASE?schema=public"
+FRONTEND_ORIGIN="http://localhost:3000"
+PORT=4000
+
+.env.local:
+AUTH_API_URL="http://localhost:4000"
+```
+
+Use unique, private credentials and a strong `DATABASE_URL` in deployed environments. The session cookie is marked `Secure` automatically when `NODE_ENV=production`.
+
+Install the frontend dependencies from the repository root and the API dependencies from `backend/`:
 
 ```bash
 npm install
+npm install --prefix backend
+```
+
+Apply the initial schema and start both applications in separate terminals:
+
+```bash
+npm run prisma:migrate --prefix backend -- --name init
+npm run start:dev --prefix backend
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+The Next.js app is available at [http://localhost:3000](http://localhost:3000). The NestJS API listens on port 4000 by default. Next.js proxies browser auth requests through `/api/auth/*` so the browser and session cookie remain same-origin. Set `FRONTEND_ORIGIN` to the exact deployed frontend origin.
 
-### Production build
+## Authentication
+
+- Register at `/register`; a successful registration creates an authenticated session.
+- Sign in at `/login`; `/dashboard` and `/` require a valid session.
+- The API exposes `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, and protected `GET /auth/me`.
+- Passwords are hashed with bcrypt. Sessions use random opaque tokens; only SHA-256 token digests are stored in PostgreSQL and expired/revoked sessions are rejected.
+- The HTTP-only cookie uses `SameSite=Lax`, `Secure` in production, and a seven-day lifetime. Mutating API requests must have the configured frontend `Origin`.
+- Login attempts are limited to five per minute per client IP. Configure `TRUST_PROXY_HOPS` to match the trusted reverse-proxy chain (default: one Next.js proxy); keep the API private behind that proxy so clients cannot forge forwarding headers. The in-memory throttler store is suitable for a single API instance; multi-instance deployments should configure a shared throttler store.
+- API errors use a consistent JSON response shape. Validation is enforced by NestJS in addition to browser-side form checks.
+
+Workspace membership and project/task persistence are not implemented. The dashboard tasks remain client-side demo state.
+
+## Checks
 
 ```bash
+npm run typecheck
+npm run lint
 npm run build
-npm start
+npm test --prefix backend
+npm run build --prefix backend
 ```
 
-## Project structure
-
-```text
-teamflow-project-manager/
-├── app/
-│   ├── globals.css
-│   ├── layout.tsx
-│   └── page.tsx
-├── components/
-│   └── teamflow-app.tsx
-├── lib/
-│   └── seed.ts
-├── types/
-│   └── task.ts
-├── .gitignore
-├── package.json
-├── tailwind.config.ts
-└── README.md
-```
-
-## Current limitations
-
-This is a frontend starter. Tasks are stored in client-side React state, so changes reset when the page reloads. Authentication, database persistence, team management, and API routes are not implemented yet.
-
-## Suggested next milestones
-
-1. Add Prisma and PostgreSQL for persistent projects and tasks.
-2. Add authentication and workspace membership.
-3. Implement API routes with validation and authorization.
-4. Add unit and integration tests.
-5. Add GitHub Actions for linting, type-checking, and builds.
-6. Deploy the app and document the live demo.
-
-## License
-
-MIT — add a `LICENSE` file if you intend to publish this project under the MIT license.
+The backend authentication tests exercise account creation, duplicate normalized emails, password failures, login, protected routes, logout/session expiry, CSRF origin checks, and login rate limiting. They use an isolated Prisma test double; running the actual service still requires PostgreSQL.

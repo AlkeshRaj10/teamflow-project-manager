@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Activity, Bell, CalendarDays, Check, ChevronDown, CircleHelp, Command,
-  Filter, LayoutDashboard, ListTodo, MoreHorizontal, Plus, Search, Settings2,
+  Filter, LayoutDashboard, ListTodo, LogOut, MoreHorizontal, Plus, Search, Settings2,
   SlidersHorizontal, Sparkles, Users, X, ArrowUpRight, Clock3, CircleDot,
 } from "lucide-react";
 import { columns, initialTasks, members } from "@/lib/seed";
 import type { Priority, Task, TaskStatus } from "@/types/task";
+import type { CurrentUser } from "@/lib/auth";
 
 const avatarColors: Record<string, string> = {
   AR: "bg-violet-100 text-violet-700",
@@ -33,7 +35,8 @@ const labelStyle: Record<string, string> = {
   QA: "bg-purple-50 text-purple-700",
 };
 
-export default function TeamflowApp() {
+export default function TeamflowApp({ currentUser }: { currentUser: CurrentUser }) {
+  const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("All priorities");
@@ -44,6 +47,39 @@ export default function TeamflowApp() {
   const [newPriority, setNewPriority] = useState<Priority>("Medium");
   const [newAssignee, setNewAssignee] = useState("AR");
   const [newStatus, setNewStatus] = useState<TaskStatus>("todo");
+  const [authError, setAuthError] = useState("");
+  const [logoutLoading, setLogoutLoading] = useState(false);
+  const userInitials = currentUser.name.split(/\s+/).filter(Boolean).slice(0, 2)
+    .map((part) => part[0].toUpperCase()).join("") || "U";
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/auth/me", { cache: "no-store", signal: controller.signal })
+      .then((response) => {
+        if (response.status === 401) router.replace("/login?expired=1");
+        else if (!response.ok) throw new Error("Session check failed.");
+      })
+      .catch((error: unknown) => {
+        if (error instanceof Error && error.name !== "AbortError") {
+          setAuthError("We couldn't verify your session. Please try refreshing the page.");
+        }
+      });
+    return () => controller.abort();
+  }, [router]);
+
+  async function logout() {
+    setLogoutLoading(true);
+    setAuthError("");
+    try {
+      const response = await fetch("/api/auth/logout", { method: "POST" });
+      if (!response.ok) throw new Error("Logout request failed.");
+      router.replace("/login");
+      router.refresh();
+    } catch {
+      setAuthError("We couldn't log you out. Please try again.");
+      setLogoutLoading(false);
+    }
+  }
 
   const filteredTasks = useMemo(() => tasks.filter((task) => {
     const matchesQuery = `${task.title} ${task.description} ${task.id} ${task.labels.join(" ")}`.toLowerCase().includes(query.toLowerCase());
@@ -118,9 +154,9 @@ export default function TeamflowApp() {
           <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-slate-500 hover:bg-slate-50"><Settings2 size={18}/>Settings</button>
           <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-slate-500 hover:bg-slate-50"><CircleHelp size={18}/>Help & support</button>
           <div className="mt-3 flex items-center gap-3 rounded-xl bg-slate-50 p-3">
-            <div className="grid h-9 w-9 place-items-center rounded-full bg-slate-800 text-xs font-bold text-white">AR</div>
-            <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">Alkesh Raj</p><p className="truncate text-xs text-slate-400">Personal workspace</p></div>
-            <MoreHorizontal size={17} className="text-slate-400"/>
+            <div title={currentUser.name} className="grid h-9 w-9 place-items-center rounded-full bg-slate-800 text-xs font-bold text-white">{userInitials}</div>
+            <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{currentUser.name}</p><p className="truncate text-xs text-slate-400">{currentUser.email}</p></div>
+            <button type="button" onClick={logout} disabled={logoutLoading} aria-label="Log out" title="Log out" className="rounded-md p-1.5 text-slate-400 hover:bg-white hover:text-slate-700 disabled:opacity-50"><LogOut size={17}/></button>
           </div>
         </div>
       </aside>
@@ -131,9 +167,11 @@ export default function TeamflowApp() {
           <div className="flex items-center gap-2 sm:gap-4">
             <div className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-400 sm:flex"><Search size={14}/><span>Search anything...</span><kbd className="ml-4 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px]">⌘ K</kbd></div>
             <button aria-label="Notifications" className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100"><Bell size={19}/><span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border-2 border-white bg-rose-500"/></button>
-            <div className="grid h-9 w-9 place-items-center rounded-full bg-violet-100 text-xs font-bold text-violet-700">AR</div>
+            <div title={currentUser.name} className="grid h-9 w-9 place-items-center rounded-full bg-violet-100 text-xs font-bold text-violet-700">{userInitials}</div>
           </div>
         </header>
+
+        {authError && <p role="alert" className="mx-5 mt-4 rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700 md:mx-8">{authError}</p>}
 
         <div className="mx-auto max-w-[1600px] px-5 py-7 md:px-8 md:py-9">
           <div className="flex flex-col justify-between gap-5 xl:flex-row xl:items-start">
@@ -162,7 +200,7 @@ export default function TeamflowApp() {
 
           <section className="mt-8">
             <div className="mb-5 flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-              <div><h2 className="text-lg font-bold text-slate-900">Project board</h2><p className="mt-1 text-sm text-slate-400">Manage your team's work from start to finish.</p></div>
+              <div><h2 className="text-lg font-bold text-slate-900">Project board</h2><p className="mt-1 text-sm text-slate-400">Manage your team&apos;s work from start to finish.</p></div>
               <div className="flex flex-wrap items-center gap-2">
                 <label className="flex min-w-[190px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-400 shadow-sm"><Search size={16}/><input aria-label="Search tasks" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search tasks..." className="w-full bg-transparent text-slate-700 outline-none placeholder:text-slate-400"/></label>
                 <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-500 shadow-sm"><Filter size={15}/><select aria-label="Filter by priority" value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} className="bg-transparent outline-none"><option>All priorities</option><option>High</option><option>Medium</option><option>Low</option></select></label>

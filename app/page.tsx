@@ -1,5 +1,5 @@
-import TeamflowApp from "@/components/teamflow-app";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <TeamflowApp />;
+  redirect("/dashboard");
 }
