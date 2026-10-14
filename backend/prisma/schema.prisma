@@ -43,19 +43,71 @@ model Workspace {
   updatedAt   DateTime              @updatedAt
   memberships WorkspaceMembership[]
   invitations WorkspaceInvitation[]
+  projects    Project[]
 }
 
 model WorkspaceMembership {
-  id          String        @id @default(cuid())
-  workspaceId String
-  userId      String
-  role        WorkspaceRole @default(MEMBER)
-  createdAt   DateTime      @default(now())
-  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            String        @id @default(cuid())
+  workspaceId   String
+  userId        String
+  role          WorkspaceRole @default(MEMBER)
+  createdAt     DateTime      @default(now())
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedTasks Task[]        @relation("TaskAssignee")
+  createdTasks  Task[]        @relation("TaskCreator")
 
   @@unique([workspaceId, userId])
   @@index([userId])
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Project {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String    @db.VarChar(120)
+  description String    @default("") @db.VarChar(2000)
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  tasks       Task[]
+
+  @@index([workspaceId, archivedAt])
+}
+
+model Task {
+  id                   String               @id @default(cuid())
+  projectId            String
+  title                String               @db.VarChar(200)
+  description          String               @default("") @db.VarChar(5000)
+  status               TaskStatus           @default(TODO)
+  priority             TaskPriority         @default(MEDIUM)
+  dueDate              DateTime?
+  assigneeMembershipId String?
+  creatorMembershipId  String?
+  version              Int                  @default(1)
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  project              Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee             WorkspaceMembership? @relation("TaskAssignee", fields: [assigneeMembershipId], references: [id], onDelete: SetNull)
+  creator              WorkspaceMembership? @relation("TaskCreator", fields: [creatorMembershipId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, status, priority])
+  @@index([assigneeMembershipId])
+  @@index([updatedAt])
 }
 
 model WorkspaceInvitation {

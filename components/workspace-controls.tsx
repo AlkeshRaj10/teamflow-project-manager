@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { ChevronDown, Pencil, Plus, Users, X } from "lucide-react";
 import { workspaceApi, WorkspaceApiError } from "@/lib/workspace-api";
 
@@ -13,32 +13,25 @@ interface Workspace {
   role: WorkspaceRole;
 }
 
-export default function WorkspaceControls({ compact = false }: { compact?: boolean }) {
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [selectedId, setSelectedId] = useState("");
+export default function WorkspaceControls({
+  compact = false,
+  workspaces,
+  selectedId,
+  onSelectedChange,
+  onRefresh,
+}: {
+  compact?: boolean;
+  workspaces: Workspace[];
+  selectedId: string;
+  onSelectedChange: (workspaceId: string) => void;
+  onRefresh: () => Promise<void>;
+}) {
   const [showEditor, setShowEditor] = useState(false);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const selected = workspaces.find((workspace) => workspace.id === selectedId);
-
-  const refresh = useCallback(async () => {
-    const result = await workspaceApi<{ workspaces: Workspace[] }>("/api/workspaces");
-    setWorkspaces(result.workspaces);
-    setSelectedId((current) =>
-      result.workspaces.some((workspace) => workspace.id === current)
-        ? current
-        : result.workspaces[0]?.id ?? "",
-    );
-  }, []);
-
-  useEffect(() => {
-    refresh()
-      .catch(() => setError("We couldn't load your workspaces. Please try again."))
-      .finally(() => setLoading(false));
-  }, [refresh]);
 
   function openCreate() {
     setEditing(false);
@@ -61,20 +54,18 @@ export default function WorkspaceControls({ compact = false }: { compact?: boole
     setError("");
     try {
       if (editing && selected) {
-        const result = await workspaceApi<{ workspace: Workspace }>(
-          `/api/workspaces/${selected.id}`,
-          { method: "PATCH", body: JSON.stringify({ name }) },
-        );
-        setWorkspaces((items) => items.map((item) =>
-          item.id === selected.id ? { ...item, name: result.workspace.name } : item,
-        ));
+        await workspaceApi<{ workspace: Workspace }>(`/api/workspaces/${selected.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ name }),
+        });
+        await onRefresh();
       } else {
         const result = await workspaceApi<{ workspace: Workspace }>("/api/workspaces", {
           method: "POST",
           body: JSON.stringify({ name }),
         });
-        setWorkspaces((items) => [...items, result.workspace]);
-        setSelectedId(result.workspace.id);
+        await onRefresh();
+        onSelectedChange(result.workspace.id);
       }
       setShowEditor(false);
     } catch (cause) {
@@ -92,9 +83,7 @@ export default function WorkspaceControls({ compact = false }: { compact?: boole
     setError("");
     try {
       await workspaceApi<void>(`/api/workspaces/${selected.id}`, { method: "DELETE" });
-      const remaining = workspaces.filter((workspace) => workspace.id !== selected.id);
-      setWorkspaces(remaining);
-      setSelectedId(remaining[0]?.id ?? "");
+      await onRefresh();
       setShowEditor(false);
     } catch (cause) {
       setError(cause instanceof WorkspaceApiError
@@ -114,12 +103,11 @@ export default function WorkspaceControls({ compact = false }: { compact?: boole
             <select
               aria-label="Select workspace"
               value={selectedId}
-              onChange={(event) => setSelectedId(event.target.value)}
-              disabled={loading || workspaces.length === 0}
+              onChange={(event) => onSelectedChange(event.target.value)}
+              disabled={workspaces.length === 0}
               className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-3 pl-3 pr-9 text-sm font-semibold text-slate-800 outline-none hover:bg-slate-50 focus:ring-2 focus:ring-indigo-200 disabled:text-slate-400"
             >
-              {loading && <option value="">Loading workspaces...</option>}
-              {!loading && workspaces.length === 0 && <option value="">No workspaces yet</option>}
+              {workspaces.length === 0 && <option value="">No workspaces yet</option>}
               {workspaces.map((workspace) => (
                 <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
               ))}
@@ -150,7 +138,7 @@ export default function WorkspaceControls({ compact = false }: { compact?: boole
           </Link>
         </div>
       )}
-      {!loading && workspaces.length === 0 && (
+      {workspaces.length === 0 && (
         <p className="mt-2 px-1 text-xs text-slate-400">Create a workspace to invite your team.</p>
       )}
       {error && !showEditor && <p role="alert" className="mt-2 text-xs text-rose-600">{error}</p>}

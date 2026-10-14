@@ -39,7 +39,7 @@ npm run start:dev --prefix backend
 npm run dev
 ```
 
-The Next.js app is available at [http://localhost:3000](http://localhost:3000). The NestJS API listens on port 4000 by default. Next.js proxies browser requests through `/api/auth/*` and `/api/workspaces/*` so the browser and session cookie remain same-origin. Set `FRONTEND_ORIGIN` to the exact deployed frontend origin.
+The Next.js app is available at [http://localhost:3000](http://localhost:3000). The NestJS API listens on port 4000 by default. Next.js proxies browser requests through `/api/auth/*`, `/api/workspaces/*`, `/api/projects/*`, and `/api/tasks/*` so the browser and session cookie remain same-origin. Set `FRONTEND_ORIGIN` to the exact deployed frontend origin.
 
 ## Authentication
 
@@ -57,8 +57,16 @@ The Next.js app is available at [http://localhost:3000](http://localhost:3000). 
 - `OWNER`, `ADMIN`, and `MEMBER` permissions are enforced by the API. Only owners can change roles or delete workspaces; owners and admins can rename workspaces, while admins can invite or remove members but cannot manage admins or owners.
 - Owners and admins can create in-app invitations for normalized email addresses. Invitation links contain a random one-time token; only its SHA-256 digest is stored. Links expire after seven days and can only be accepted by an account with the invited email.
 - Invitations are not emailed. Copy and share the generated invitation link directly; no email provider is configured.
-- The workspace UI is available from the dashboard selector and each workspace's Members link. Workspaces and memberships are persisted in PostgreSQL; project/task state remains client-side demo data.
-- Apply new schema migrations with `npm run prisma:migrate --prefix backend`.
+- The workspace UI is available from the dashboard selector and each workspace's Members link. Workspaces and memberships are persisted in PostgreSQL.
+
+## Projects and tasks
+
+- Projects belong to workspaces. Owners and admins can create, edit, and archive them. Archiving is soft and irreversible through the MVP API: tasks remain stored but become read-only and disappear from the normal project list. Deleting a workspace cascades to its projects and tasks.
+- Tasks belong to projects. Any workspace member can create and update tasks; only the task creator or a workspace owner/admin can permanently delete one. Removing a workspace member clears that member's task assignments and creator reference without deleting tasks.
+- Assignees are stored as workspace memberships and must be members of the project's workspace. Task list filters include status, priority, assignee, and case-insensitive search; results are paginated.
+- Task updates require the current `version`; stale updates return `409 Conflict`. Allowed status transitions are `TODO → IN_PROGRESS`, `IN_PROGRESS → TODO/REVIEW`, `REVIEW → IN_PROGRESS/DONE`, and `DONE → REVIEW`. Same-status updates are allowed.
+- The dashboard loads projects, tasks, team members, pagination, and project summary counts from the API. Task/project changes persist in PostgreSQL; the former sample tasks are no longer used.
+- Apply pending schema migrations with `npm run prisma:migrate --prefix backend` in development or `prisma migrate deploy` in deployment environments. The new migration is `backend/prisma/migrations/20261014183000_projects_tasks`.
 
 ## Checks
 
@@ -70,4 +78,4 @@ npm test --prefix backend
 npm run build --prefix backend
 ```
 
-The backend tests exercise account creation, duplicate normalized emails, password failures, login, protected routes, logout/session expiry, CSRF origin checks, login rate limiting, workspace isolation, role permissions, invitation expiry and acceptance, duplicate membership, and last-owner protection. They use isolated Prisma test doubles; running the actual service still requires PostgreSQL.
+The backend tests exercise account creation, duplicate normalized emails, password failures, login, protected routes, logout/session expiry, CSRF origin checks, login rate limiting, workspace isolation, role permissions, invitation expiry and acceptance, duplicate membership, last-owner protection, project authorization, task CRUD rules, assignment validation, filtering, pagination, task status transitions, optimistic concurrency, and summaries. They use isolated Prisma test doubles; running the actual service still requires PostgreSQL.

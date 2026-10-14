@@ -10,6 +10,12 @@ const nextConfig: NextConfig = {
     }, {
       source: "/api/workspaces/:path*",
       destination: `${authApiUrl.replace(/\/$/, "")}/workspaces/:path*`,
+    }, {
+      source: "/api/projects/:path*",
+      destination: `${authApiUrl.replace(/\/$/, "")}/projects/:path*`,
+    }, {
+      source: "/api/tasks/:path*",
+      destination: `${authApiUrl.replace(/\/$/, "")}/tasks/:path*`,
     }];
   },
 };
