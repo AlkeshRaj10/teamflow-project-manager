@@ -190,6 +190,12 @@ describe("authentication API", () => {
     expect(response.body).toMatchObject({ statusCode: 401, error: "Unauthorized" });
   });
 
+  it("rejects unauthenticated workspace API requests", async () => {
+    const response = await request(app.getHttpServer()).get("/workspaces");
+
+    expect(response.status).toBe(401);
+  });
+
   it("sets a Secure, HTTP-only, SameSite cookie in production", async () => {
     const originalEnvironment = process.env.NODE_ENV;
     process.env.NODE_ENV = "production";

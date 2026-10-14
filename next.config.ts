@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
     return [{
       source: "/api/auth/:path*",
       destination: `${authApiUrl.replace(/\/$/, "")}/auth/:path*`,
+    }, {
+      source: "/api/workspaces/:path*",
+      destination: `${authApiUrl.replace(/\/$/, "")}/workspaces/:path*`,
     }];
   },
 };

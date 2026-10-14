@@ -8,12 +8,14 @@ datasource db {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  name         String    @db.VarChar(100)
-  email        String    @unique @db.VarChar(254)
+  id           String                @id @default(cuid())
+  name         String                @db.VarChar(100)
+  email        String                @unique @db.VarChar(254)
   passwordHash String
-  createdAt    DateTime  @default(now())
+  createdAt    DateTime              @default(now())
   sessions     Session[]
+  memberships  WorkspaceMembership[]
+  invitations  WorkspaceInvitation[] @relation("InvitationCreator")
 }
 
 model Session {
@@ -25,5 +27,50 @@ model Session {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([expiresAt])
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model Workspace {
+  id          String                @id @default(cuid())
+  name        String                @db.VarChar(100)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  memberships WorkspaceMembership[]
+  invitations WorkspaceInvitation[]
+}
+
+model WorkspaceMembership {
+  id          String        @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(MEMBER)
+  createdAt   DateTime      @default(now())
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+model WorkspaceInvitation {
+  id          String        @id @default(cuid())
+  workspaceId String
+  email       String        @db.VarChar(254)
+  role        WorkspaceRole @default(MEMBER)
+  tokenHash   String        @unique
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime      @default(now())
+  createdById String
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy   User          @relation("InvitationCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, email])
   @@index([expiresAt])
 }

@@ -10,6 +10,7 @@ import {
 import { columns, initialTasks, members } from "@/lib/seed";
 import type { Priority, Task, TaskStatus } from "@/types/task";
 import type { CurrentUser } from "@/lib/auth";
+import WorkspaceControls from "@/components/workspace-controls";
 
 const avatarColors: Record<string, string> = {
   AR: "bg-violet-100 text-violet-700",
@@ -122,11 +123,7 @@ export default function TeamflowApp({ currentUser }: { currentUser: CurrentUser 
           <button aria-label="Switch workspace" className="ml-auto rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><ChevronDown size={16}/></button>
         </div>
 
-        <button className="mt-8 flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5 text-left hover:bg-slate-50">
-          <div className="grid h-8 w-8 place-items-center rounded-lg bg-violet-100 text-xs font-bold text-violet-700">AC</div>
-          <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">Acme Creative</p><p className="text-xs text-slate-400">Free workspace</p></div>
-          <ChevronDown size={15} className="text-slate-400"/>
-        </button>
+        <WorkspaceControls />
 
         <p className="mb-2 mt-8 px-3 text-[10px] font-bold uppercase tracking-[.16em] text-slate-400">Workspace</p>
         <nav className="space-y-1">
@@ -170,6 +167,10 @@ export default function TeamflowApp({ currentUser }: { currentUser: CurrentUser 
             <div title={currentUser.name} className="grid h-9 w-9 place-items-center rounded-full bg-violet-100 text-xs font-bold text-violet-700">{userInitials}</div>
           </div>
         </header>
+
+        <div className="border-b border-slate-200/80 bg-white px-5 py-3 lg:hidden md:px-8">
+          <WorkspaceControls compact />
+        </div>
 
         {authError && <p role="alert" className="mx-5 mt-4 rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700 md:mx-8">{authError}</p>}
 
