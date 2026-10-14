@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #f7f8fc;
+  color: #182230;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+::selection { background: #d9e5ff; }
+
+.scrollbar-thin::-webkit-scrollbar { height: 7px; width: 7px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: #d6dce7; border-radius: 99px; }
