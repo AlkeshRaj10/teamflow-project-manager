@@ -191,9 +191,14 @@ describe("authentication API", () => {
   });
 
   it("rejects unauthenticated workspace API requests", async () => {
-    const response = await request(app.getHttpServer()).get("/workspaces");
+    const [workspace, projects, tasks, task] = await Promise.all([
+      request(app.getHttpServer()).get("/workspaces"),
+      request(app.getHttpServer()).get("/workspaces/workspace-1/projects"),
+      request(app.getHttpServer()).get("/projects/project-1/tasks"),
+      request(app.getHttpServer()).get("/tasks/task-1"),
+    ]);
 
-    expect(response.status).toBe(401);
+    expect([workspace, projects, tasks, task].every((response) => response.status === 401)).toBe(true);
   });
 
   it("sets a Secure, HTTP-only, SameSite cookie in production", async () => {

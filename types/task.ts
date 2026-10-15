@@ -3,11 +3,57 @@ export type Priority = "Low" | "Medium" | "High";
 
 export type Task = {
   id: string;
+  version: number;
   title: string;
   description: string;
   status: TaskStatus;
   priority: Priority;
-  assignee: string;
-  dueDate: string;
-  labels: string[];
+  assigneeId: string | null;
+  assigneeName: string | null;
+  creatorId: string | null;
+  dueDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type Project = {
+  id: string;
+  workspaceId: string;
+  name: string;
+  description: string;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  _count?: { tasks: number };
+};
+
+export type WorkspaceMember = {
+  role: "OWNER" | "ADMIN" | "MEMBER";
+  user: { id: string; name: string; email: string };
+};
+
+export type ProjectSummary = {
+  projectId: string;
+  total: number;
+  byStatus: Record<"TODO" | "IN_PROGRESS" | "REVIEW" | "DONE", number>;
+  byPriority: Record<"LOW" | "MEDIUM" | "HIGH", number>;
+  overdue: number;
+  completedPercent: number;
+};
+
+export type TaskPage = {
+  items: Array<{
+    id: string;
+    version: number;
+    title: string;
+    description: string;
+    status: "TODO" | "IN_PROGRESS" | "REVIEW" | "DONE";
+    priority: "LOW" | "MEDIUM" | "HIGH";
+    dueDate: string | null;
+    createdAt: string;
+    updatedAt: string;
+    assignee: { user: { id: string; name: string } } | null;
+    creator: { user: { id: string; name: string } } | null;
+  }>;
+  pagination: { page: number; pageSize: number; total: number; pageCount: number };
 };
