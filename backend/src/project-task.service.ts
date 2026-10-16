@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { Prisma, TaskPriority, TaskStatus, WorkspaceRole } from "@prisma/client";
+import { Prisma, TaskActivityType, TaskPriority, TaskStatus, WorkspaceRole } from "@prisma/client";
 import type { AuthenticatedUser } from "./auth.types";
 import type {
   CreateProjectDto,
@@ -20,6 +20,17 @@ import { PrismaService } from "./prisma.service";
 const taskDetails = {
   assignee: { include: { user: { select: { id: true, name: true, email: true } } } },
   creator: { include: { user: { select: { id: true, name: true, email: true } } } },
+} satisfies Prisma.TaskInclude;
+const taskCollaborationDetails = {
+  ...taskDetails,
+  comments: {
+    include: { author: { include: { user: { select: { id: true, name: true } } } } },
+    orderBy: { createdAt: "asc" },
+  },
+  activities: {
+    include: { actor: { include: { user: { select: { id: true, name: true } } } } },
+    orderBy: { createdAt: "asc" },
+  },
 } satisfies Prisma.TaskInclude;
 
 const allowedTransitions: Record<TaskStatus, readonly TaskStatus[]> = {
@@ -157,8 +168,22 @@ export class ProjectTaskService {
       }),
       this.prisma.task.count({ where }),
     ]);
+    const statusCountsWhere: Prisma.TaskWhereInput = { ...where };
+    delete statusCountsWhere.status;
+    const statusGroups = await this.prisma.task.groupBy({
+      by: ["status"],
+      where: statusCountsWhere,
+      _count: { _all: true },
+    });
+    const statusCounts = Object.fromEntries(
+      Object.values(TaskStatus).map((status) => [
+        status,
+        statusGroups.find((item) => item.status === status)?._count._all ?? 0,
+      ]),
+    ) as Record<TaskStatus, number>;
     return {
       items,
+      statusCounts,
       pagination: {
         page: query.page,
         pageSize: query.pageSize,
@@ -176,23 +201,44 @@ export class ProjectTaskService {
       project.workspaceId,
       body.assigneeId,
     );
-    return this.prisma.task.create({
-      data: {
-        projectId,
-        title: body.title,
-        description: body.description ?? "",
-        status: body.status ?? TaskStatus.TODO,
-        priority: body.priority ?? TaskPriority.MEDIUM,
-        dueDate: body.dueDate ? new Date(body.dueDate) : null,
-        assigneeMembershipId,
-        creatorMembershipId: creator.id,
-      },
-      include: taskDetails,
+    return this.prisma.$transaction(async (transaction) => {
+      const task = await transaction.task.create({
+        data: {
+          projectId,
+          title: body.title,
+          description: body.description ?? "",
+          status: body.status ?? TaskStatus.TODO,
+          priority: body.priority ?? TaskPriority.MEDIUM,
+          dueDate: body.dueDate ? new Date(body.dueDate) : null,
+          assigneeMembershipId,
+          creatorMembershipId: creator.id,
+        },
+        include: taskDetails,
+      });
+      await transaction.taskActivity.create({
+        data: {
+          taskId: task.id,
+          actorMembershipId: creator.id,
+          type: TaskActivityType.CREATED,
+          toValue: task.title,
+        },
+      });
+      if (assigneeMembershipId) {
+        await transaction.taskActivity.create({
+          data: {
+            taskId: task.id,
+            actorMembershipId: creator.id,
+            type: TaskActivityType.ASSIGNED,
+            toValue: assigneeMembershipId,
+          },
+        });
+      }
+      return task;
     });
   }
 
   async getTask(taskId: string, user: AuthenticatedUser) {
-    const task = await this.findTaskForUser(taskId, user.id);
+    const task = await this.findTaskForUser(taskId, user.id, true);
     return task;
   }
 
@@ -213,6 +259,12 @@ export class ProjectTaskService {
     if (body.status && !allowedTransitions[task.status].includes(body.status)) {
       throw new BadRequestException(`Tasks cannot transition from ${task.status} to ${body.status}.`);
     }
+    const membership = await this.requireMembership(project.workspaceId, user.id);
+    const isManager = membership.role === WorkspaceRole.OWNER || membership.role === WorkspaceRole.ADMIN;
+    if (body.status !== undefined && body.status !== task.status &&
+      !isManager && task.creatorMembershipId !== membership.id) {
+      throw new ForbiddenException("Only the task creator or a workspace admin can change task status.");
+    }
     const assigneeMembershipId = body.assigneeId === undefined
       ? undefined
       : await this.resolveAssignee(project.workspaceId, body.assigneeId);
@@ -227,9 +279,36 @@ export class ProjectTaskService {
         : {}),
       version: { increment: 1 },
     };
-    const updated = await this.prisma.task.updateMany({
-      where: { id: taskId, version: body.version, project: { archivedAt: null } },
-      data,
+    const updated = await this.prisma.$transaction(async (transaction) => {
+      const result = await transaction.task.updateMany({
+        where: { id: taskId, version: body.version, project: { archivedAt: null } },
+        data,
+      });
+      if (result.count !== 1) return result;
+      if (body.status !== undefined && body.status !== task.status) {
+        await transaction.taskActivity.create({
+          data: {
+            taskId,
+            actorMembershipId: membership.id,
+            type: TaskActivityType.STATUS_CHANGED,
+            fromValue: task.status,
+            toValue: body.status,
+          },
+        });
+      }
+      if (assigneeMembershipId !== undefined &&
+        assigneeMembershipId !== task.assigneeMembershipId) {
+        await transaction.taskActivity.create({
+          data: {
+            taskId,
+            actorMembershipId: membership.id,
+            type: TaskActivityType.ASSIGNED,
+            fromValue: task.assigneeMembershipId,
+            toValue: assigneeMembershipId,
+          },
+        });
+      }
+      return result;
     });
     if (updated.count !== 1) {
       throw new ConflictException("This task changed since it was loaded. Refresh and try again.");
@@ -237,6 +316,51 @@ export class ProjectTaskService {
     return this.prisma.task.findUniqueOrThrow({
       where: { id: taskId },
       include: taskDetails,
+    });
+  }
+
+  async listComments(taskId: string, user: AuthenticatedUser) {
+    await this.findTaskForUser(taskId, user.id);
+    return this.prisma.taskComment.findMany({
+      where: { taskId },
+      include: {
+        author: { include: { user: { select: { id: true, name: true } } } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  async createComment(taskId: string, content: string, user: AuthenticatedUser) {
+    const task = await this.findTaskForUser(taskId, user.id);
+    if (task.project.archivedAt) throw new ConflictException("Comments cannot be added to archived projects.");
+    const author = await this.requireMembership(task.project.workspaceId, user.id);
+    return this.prisma.$transaction(async (transaction) => {
+      const comment = await transaction.taskComment.create({
+        data: { taskId, content, authorMembershipId: author.id },
+        include: {
+          author: { include: { user: { select: { id: true, name: true } } } },
+        },
+      });
+      await transaction.taskActivity.create({
+        data: {
+          taskId,
+          actorMembershipId: author.id,
+          type: TaskActivityType.COMMENTED,
+          toValue: comment.id,
+        },
+      });
+      return comment;
+    });
+  }
+
+  async listActivity(taskId: string, user: AuthenticatedUser) {
+    await this.findTaskForUser(taskId, user.id);
+    return this.prisma.taskActivity.findMany({
+      where: { taskId },
+      include: {
+        actor: { include: { user: { select: { id: true, name: true } } } },
+      },
+      orderBy: { createdAt: "asc" },
     });
   }
 
@@ -289,13 +413,16 @@ export class ProjectTaskService {
     return project;
   }
 
-  private async findTaskForUser(taskId: string, userId: string) {
+  private async findTaskForUser(taskId: string, userId: string, includeCollaboration = false) {
     const task = await this.prisma.task.findFirst({
       where: {
         id: taskId,
         project: { workspace: { memberships: { some: { userId } } } },
       },
-      include: { ...taskDetails, project: true },
+      include: {
+        ...(includeCollaboration ? taskCollaborationDetails : taskDetails),
+        project: true,
+      },
     });
     if (!task) throw this.notFound();
     return task;

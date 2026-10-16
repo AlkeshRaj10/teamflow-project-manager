@@ -16,6 +16,7 @@ import { AuthGuard } from "./auth.guard";
 import type { AuthenticatedRequest } from "./auth.types";
 import {
   CreateProjectDto,
+  CreateTaskCommentDto,
   CreateTaskDto,
   ListProjectQueryDto,
   ListTaskQueryDto,
@@ -132,5 +133,31 @@ export class ProjectTaskController {
   @HttpCode(HttpStatus.NO_CONTENT)
   deleteTask(@Param("taskId") taskId: string, @Req() request: AuthenticatedRequest) {
     return this.projectTaskService.deleteTask(taskId, request.currentUser);
+  }
+
+  @Get("tasks/:taskId/comments")
+  async listComments(@Param("taskId") taskId: string, @Req() request: AuthenticatedRequest) {
+    return { comments: await this.projectTaskService.listComments(taskId, request.currentUser) };
+  }
+
+  @Post("tasks/:taskId/comments")
+  @HttpCode(HttpStatus.CREATED)
+  async createComment(
+    @Param("taskId") taskId: string,
+    @Body() body: CreateTaskCommentDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return {
+      comment: await this.projectTaskService.createComment(
+        taskId,
+        body.content,
+        request.currentUser,
+      ),
+    };
+  }
+
+  @Get("tasks/:taskId/activity")
+  async listActivity(@Param("taskId") taskId: string, @Req() request: AuthenticatedRequest) {
+    return { activities: await this.projectTaskService.listActivity(taskId, request.currentUser) };
   }
 }

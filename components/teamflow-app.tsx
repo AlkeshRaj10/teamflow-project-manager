@@ -13,6 +13,7 @@ import type { Priority, Project, ProjectSummary, Task, TaskPage, TaskStatus, Wor
 import type { CurrentUser } from "@/lib/auth";
 import WorkspaceControls from "@/components/workspace-controls";
 import { workspaceApi, WorkspaceApiError } from "@/lib/workspace-api";
+import TaskDetailsDrawer from "@/components/task-details-drawer";
 
 type Workspace = { id: string; name: string; role: "OWNER" | "ADMIN" | "MEMBER" };
 
@@ -75,6 +76,12 @@ export default function TeamflowApp({ currentUser }: { currentUser: CurrentUser 
   const [projectId, setProjectId] = useState("");
   const [tasks, setTasks] = useState<Task[]>([]);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
+  const [statusCounts, setStatusCounts] = useState<TaskPage["statusCounts"]>({
+    TODO: 0,
+    IN_PROGRESS: 0,
+    REVIEW: 0,
+    DONE: 0,
+  });
   const [summary, setSummary] = useState<ProjectSummary | null>(null);
   const [pagination, setPagination] = useState({ page: 1, pageCount: 0, total: 0 });
   const [query, setQuery] = useState("");
@@ -83,6 +90,7 @@ export default function TeamflowApp({ currentUser }: { currentUser: CurrentUser 
   const [showModal, setShowModal] = useState(false);
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [detailsTaskId, setDetailsTaskId] = useState<string | null>(null);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState("");
@@ -205,6 +213,7 @@ export default function TeamflowApp({ currentUser }: { currentUser: CurrentUser 
       ])
         .then(([taskResult, summaryResult, memberResult]) => {
           setTasks(taskResult.items.map(mapTask));
+          setStatusCounts(taskResult.statusCounts);
           setPagination((current) => ({
             ...current,
             pageCount: taskResult.pagination.pageCount,
@@ -333,6 +342,12 @@ export default function TeamflowApp({ currentUser }: { currentUser: CurrentUser 
         ? error.message
         : "We couldn't move this task. Please try again.");
     }
+  }
+
+  function canChangeStatus(task: Task): boolean {
+    return selectedWorkspace?.role === "OWNER" ||
+      selectedWorkspace?.role === "ADMIN" ||
+      task.creatorId === currentUser.id;
   }
 
   async function deleteTask(task: Task) {
@@ -544,11 +559,11 @@ export default function TeamflowApp({ currentUser }: { currentUser: CurrentUser 
                 return (
                   <div key={column.id} onDragOver={(event) => event.preventDefault()} onDrop={() => { const task = tasks.find((item) => item.id === draggedId); if (task) void moveTask(task, column.id); }} className={`min-w-[255px] rounded-xl border p-3 transition ${draggedId ? "border-indigo-200 bg-indigo-50/40" : "border-slate-200/80 bg-[#f0f2f8]/70"}`}>
                     <div className="mb-3 flex items-center justify-between px-1 py-1">
-                      <div className="flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${column.color}`}/><h3 className="text-sm font-bold text-slate-700">{column.title}</h3><span className="rounded-md bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-400">{columnTasks.length}</span></div>
+                      <div className="flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${column.color}`}/><h3 className="text-sm font-bold text-slate-700">{column.title}</h3><span className="rounded-md bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-400">{statusCounts[statusToApi[column.id]]}</span></div>
                       <button type="button" disabled={Boolean(selectedProject.archivedAt)} onClick={() => openCreateTask(column.id)} aria-label={`Add task to ${column.title}`} className="rounded-md p-1 text-slate-400 hover:bg-white hover:text-indigo-600 disabled:opacity-50"><Plus size={17}/></button>
                     </div>
                     <div className="space-y-3">
-                      {columnTasks.map((task) => <TaskCard key={task.id} task={task} canDelete={selectedWorkspace?.role !== "MEMBER" || task.creatorId === currentUser.id} onEdit={() => openEditTask(task)} onDelete={() => void deleteTask(task)} onDragStart={() => setDraggedId(task.id)} onDragEnd={() => setDraggedId(null)} />)}
+                      {columnTasks.map((task) => <TaskCard key={task.id} task={task} canDelete={selectedWorkspace?.role !== "MEMBER" || task.creatorId === currentUser.id} canChangeStatus={canChangeStatus(task)} onDetails={() => setDetailsTaskId(task.id)} onStatusChange={(status) => void moveTask(task, status)} onEdit={() => openEditTask(task)} onDelete={() => void deleteTask(task)} onDragStart={() => setDraggedId(task.id)} onDragEnd={() => setDraggedId(null)} />)}
                       {columnTasks.length === 0 && <div className="rounded-lg border border-dashed border-slate-300 px-3 py-8 text-center text-xs text-slate-400">{boardLoading ? "Loading tasks..." : "No tasks in this status"}</div>}
                     </div>
                     <button type="button" disabled={Boolean(selectedProject.archivedAt)} onClick={() => openCreateTask(column.id)} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 py-2.5 text-xs font-semibold text-slate-500 transition hover:border-indigo-300 hover:bg-white hover:text-indigo-600 disabled:opacity-50"><Plus size={15}/> Add a task</button>
@@ -602,6 +617,14 @@ export default function TeamflowApp({ currentUser }: { currentUser: CurrentUser 
           <div className="mt-6 flex justify-end gap-2"><button type="button" onClick={() => setShowProjectModal(false)} className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button><button type="submit" disabled={saving} className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">{saving ? "Saving..." : editingProject ? "Save changes" : "Create project"}</button></div>
         </form>
       </div>}
+
+      {detailsTaskId && (
+        <TaskDetailsDrawer
+          taskId={detailsTaskId}
+          canComment={Boolean(workspaceId)}
+          onClose={() => setDetailsTaskId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -619,6 +642,9 @@ function StatCard({ label, value, note, icon, tone }: { label: string; value: st
 function TaskCard({
   task,
   canDelete,
+  canChangeStatus,
+  onDetails,
+  onStatusChange,
   onEdit,
   onDelete,
   onDragStart,
@@ -626,17 +652,34 @@ function TaskCard({
 }: {
   task: Task;
   canDelete: boolean;
+  canChangeStatus: boolean;
+  onDetails: () => void;
+  onStatusChange: (status: TaskStatus) => void;
   onEdit: () => void;
   onDelete: () => void;
   onDragStart: () => void;
   onDragEnd: () => void;
 }) {
   const assigneeInitials = task.assigneeName ? initials(task.assigneeName) : "?";
-  return <article draggable onDragStart={onDragStart} onDragEnd={onDragEnd} className="group cursor-grab rounded-xl border border-slate-200/80 bg-white p-4 shadow-[0_2px_6px_rgba(15,23,42,.025)] transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md active:cursor-grabbing">
+  return <article draggable={canChangeStatus} onDragStart={onDragStart} onDragEnd={onDragEnd} className={`group rounded-xl border border-slate-200/80 bg-white p-4 shadow-[0_2px_6px_rgba(15,23,42,.025)] transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${canChangeStatus ? "cursor-grab active:cursor-grabbing" : ""}`}>
     <div className="mb-3 flex items-center justify-between"><span className="text-[10px] font-semibold tracking-wide text-slate-400">TASK-{task.id.slice(-6).toUpperCase()}</span><div className="flex gap-1 opacity-0 transition group-hover:opacity-100"><button type="button" onClick={onEdit} aria-label={`Edit ${task.title}`} className="rounded p-1 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><Pencil size={14}/></button>{canDelete && <button type="button" onClick={onDelete} aria-label={`Delete ${task.title}`} className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={14}/></button>}</div></div>
-    <h4 className="text-sm font-bold leading-5 text-slate-800">{task.title}</h4>
+    <h4 className="text-sm font-bold leading-5 text-slate-800"><button type="button" onClick={onDetails} className="text-left hover:text-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500">{task.title}</button></h4>
     <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-400">{task.description}</p>
     <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3"><span className={`rounded-md px-2 py-1 text-[10px] font-semibold ring-1 ring-inset ${priorityStyle[task.priority]}`}>{task.priority} priority</span><div className="flex items-center gap-2"><span className="flex items-center gap-1 text-[10px] text-slate-400"><CalendarDays size={12}/>{task.dueDate ? new Date(task.dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "No due date"}</span><span title={task.assigneeName ?? "Unassigned"} className="grid h-7 w-7 place-items-center rounded-full bg-violet-100 text-[9px] font-bold text-violet-700">{task.assigneeName ? assigneeInitials : "—"}</span></div></div>
+    <label className="mt-3 block text-xs font-medium text-slate-500">
+      <span className="sr-only">Move task {task.title}</span>
+      <select
+        aria-label={`Move ${task.title}`}
+        value={task.status}
+        disabled={!canChangeStatus}
+        onChange={(event) => onStatusChange(event.target.value as TaskStatus)}
+        className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-indigo-400 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+      >
+        {(allowedUiTransitions[task.status]).map((status) => (
+          <option key={status} value={status}>{columns.find((column) => column.id === status)?.title}</option>
+        ))}
+      </select>
+    </label>
   </article>;
 }
 

@@ -65,9 +65,12 @@ class ProjectTaskPrismaDouble {
       where,
     }: {
       where: { workspaceId_userId: { userId: string } };
-    }) => where.workspaceId_userId.userId === owner.id
-      ? this.membership
-      : this.assigneeMembership),
+    }) => {
+      const userId = where.workspaceId_userId.userId;
+      if (userId === this.membership?.userId) return this.membership;
+      if (userId === owner.id && this.membership?.userId !== owner.id) return null;
+      return this.assigneeMembership;
+    }),
   };
   readonly projectModel = {
     findMany: jest.fn(async () => []),
@@ -98,6 +101,32 @@ class ProjectTaskPrismaDouble {
       ? [{ status: TaskStatus.DONE, _count: { _all: 1 } }]
       : [{ priority: TaskPriority.HIGH, _count: { _all: 1 } }]),
   };
+  readonly taskActivity = {
+    create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: "activity-1",
+      ...data,
+    })),
+    findMany: jest.fn(async () => []),
+  };
+  readonly taskComment = {
+    create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: "comment-1",
+      createdAt: new Date(),
+      ...data,
+    })),
+    findMany: jest.fn(async () => []),
+  };
+  readonly $transaction = jest.fn(async <T>(
+    callback: (transaction: {
+      task: typeof this.taskModel;
+      taskActivity: typeof this.taskActivity;
+      taskComment: typeof this.taskComment;
+    }) => Promise<T>,
+  ) => callback({
+    task: this.taskModel,
+    taskActivity: this.taskActivity,
+    taskComment: this.taskComment,
+  }));
 
 }
 
@@ -106,6 +135,9 @@ function makeService(double: ProjectTaskPrismaDouble): ProjectTaskService {
     workspaceMembership: double.workspaceMembership,
     project: double.projectModel,
     task: double.taskModel,
+    taskActivity: double.taskActivity,
+    taskComment: double.taskComment,
+    $transaction: double.$transaction,
   };
   return new ProjectTaskService(prisma as unknown as PrismaService);
 }
@@ -265,18 +297,105 @@ describe("project and task persistence", () => {
         dueDate: new Date("2026-11-01T00:00:00.000Z"),
       }),
     }));
+    expect(prisma.taskActivity.create).toHaveBeenCalledWith({
+      data: {
+        taskId: "task-1",
+        actorMembershipId: "member-owner",
+        type: "CREATED",
+        toValue: "Draft roadmap",
+      },
+    });
+  });
+
+  it("records status and assignment changes in the update transaction", async () => {
+    prisma.task = taskFixture({ status: TaskStatus.IN_PROGRESS });
+
+    await service.updateTask("task-1", {
+      status: TaskStatus.REVIEW,
+      assigneeId: "user-assignee",
+      version: 1,
+    }, owner);
+
+    expect(prisma.taskActivity.create).toHaveBeenCalledTimes(2);
+    expect(prisma.taskActivity.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        type: "STATUS_CHANGED",
+        fromValue: TaskStatus.IN_PROGRESS,
+        toValue: TaskStatus.REVIEW,
+      }),
+    }));
+    expect(prisma.taskActivity.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        type: "ASSIGNED",
+        fromValue: null,
+        toValue: "member-assignee",
+      }),
+    }));
+  });
+
+  it("rejects status changes by a member who is neither manager nor task creator", async () => {
+    prisma.membership = {
+      id: "member-ordinary",
+      workspaceId: "workspace-1",
+      userId: member.id,
+      role: WorkspaceRole.MEMBER,
+    };
+    prisma.task = taskFixture({ creatorMembershipId: "another-member" });
+
+    await expect(service.updateTask("task-1", {
+      status: TaskStatus.IN_PROGRESS,
+      version: 1,
+    }, member)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.taskModel.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("allows task members to comment and records comment activity atomically", async () => {
+    prisma.membership = {
+      id: "member-ordinary",
+      workspaceId: "workspace-1",
+      userId: member.id,
+      role: WorkspaceRole.MEMBER,
+    };
+
+    const created = await service.createComment("task-1", "Looks good.", member);
+
+    expect(created).toMatchObject({
+      id: "comment-1",
+      content: "Looks good.",
+      authorMembershipId: "member-ordinary",
+    });
+    expect(prisma.taskActivity.create).toHaveBeenCalledWith({
+      data: {
+        taskId: "task-1",
+        actorMembershipId: "member-ordinary",
+        type: "COMMENTED",
+        toValue: "comment-1",
+      },
+    });
+  });
+
+  it("denies comments for users outside the task workspace", async () => {
+    prisma.task = null;
+
+    await expect(service.createComment("task-1", "Unauthorized", member))
+      .rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.taskComment.create).not.toHaveBeenCalled();
   });
 
   it("prevents reading tasks outside the user's workspace", async () => {
     prisma.task = null;
 
     await expect(service.getTask("task-private", member)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.listComments("task-private", member)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.listActivity("task-private", member)).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.taskModel.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: {
         id: "task-private",
         project: { workspace: { memberships: { some: { userId: member.id } } } },
       },
     }));
+    expect(prisma.taskComment.findMany).not.toHaveBeenCalled();
+    expect(prisma.taskActivity.findMany).not.toHaveBeenCalled();
   });
 
   it("rejects invalid status transitions", async () => {

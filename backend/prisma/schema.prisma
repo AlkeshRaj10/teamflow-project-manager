@@ -47,15 +47,17 @@ model Workspace {
 }
 
 model WorkspaceMembership {
-  id            String        @id @default(cuid())
+  id            String         @id @default(cuid())
   workspaceId   String
   userId        String
-  role          WorkspaceRole @default(MEMBER)
-  createdAt     DateTime      @default(now())
-  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assignedTasks Task[]        @relation("TaskAssignee")
-  createdTasks  Task[]        @relation("TaskCreator")
+  role          WorkspaceRole  @default(MEMBER)
+  createdAt     DateTime       @default(now())
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedTasks Task[]         @relation("TaskAssignee")
+  createdTasks  Task[]         @relation("TaskCreator")
+  comments      TaskComment[]  @relation("TaskCommentAuthor")
+  activities    TaskActivity[] @relation("TaskActivityActor")
 
   @@unique([workspaceId, userId])
   @@index([userId])
@@ -104,10 +106,46 @@ model Task {
   project              Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
   assignee             WorkspaceMembership? @relation("TaskAssignee", fields: [assigneeMembershipId], references: [id], onDelete: SetNull)
   creator              WorkspaceMembership? @relation("TaskCreator", fields: [creatorMembershipId], references: [id], onDelete: SetNull)
+  comments             TaskComment[]
+  activities           TaskActivity[]
 
   @@index([projectId, status, priority])
   @@index([assigneeMembershipId])
   @@index([updatedAt])
+}
+
+model TaskComment {
+  id                 String               @id @default(cuid())
+  taskId             String
+  authorMembershipId String?
+  content            String               @db.VarChar(5000)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  task               Task                 @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author             WorkspaceMembership? @relation("TaskCommentAuthor", fields: [authorMembershipId], references: [id], onDelete: SetNull)
+
+  @@index([taskId, createdAt])
+}
+
+enum TaskActivityType {
+  CREATED
+  ASSIGNED
+  STATUS_CHANGED
+  COMMENTED
+}
+
+model TaskActivity {
+  id                String               @id @default(cuid())
+  taskId            String
+  actorMembershipId String?
+  type              TaskActivityType
+  fromValue         String?
+  toValue           String?
+  createdAt         DateTime             @default(now())
+  task              Task                 @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor             WorkspaceMembership? @relation("TaskActivityActor", fields: [actorMembershipId], references: [id], onDelete: SetNull)
+
+  @@index([taskId, createdAt])
 }
 
 model WorkspaceInvitation {

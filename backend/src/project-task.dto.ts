@@ -141,3 +141,11 @@ export class UpdateTaskDto {
   @IsDateString()
   dueDate?: string | null;
 }
+
+export class CreateTaskCommentDto {
+  @Transform(({ value }) => typeof value === "string" ? value.trim() : value)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(5000)
+  content!: string;
+}

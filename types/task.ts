@@ -55,5 +55,28 @@ export type TaskPage = {
     assignee: { user: { id: string; name: string } } | null;
     creator: { user: { id: string; name: string } } | null;
   }>;
+  statusCounts: Record<"TODO" | "IN_PROGRESS" | "REVIEW" | "DONE", number>;
   pagination: { page: number; pageSize: number; total: number; pageCount: number };
+};
+
+export type TaskComment = {
+  id: string;
+  content: string;
+  createdAt: string;
+  author: { user: { id: string; name: string } } | null;
+};
+
+export type TaskActivity = {
+  id: string;
+  type: "CREATED" | "ASSIGNED" | "STATUS_CHANGED" | "COMMENTED";
+  fromValue: string | null;
+  toValue: string | null;
+  createdAt: string;
+  actor: { user: { id: string; name: string } } | null;
+};
+
+export type TaskDetails = TaskPage["items"][number] & {
+  project: { id: string; name: string; archivedAt: string | null };
+  comments: TaskComment[];
+  activities: TaskActivity[];
 };
